@@ -7,6 +7,7 @@ export const StudySetProvider = ({ children }) => {
   const [activeSet, setActiveSet] = useState(null);
   const [studyProgress, setStudyProgress] = useState({}); // Track progress for each study set
   const [saveStatus, setSaveStatus] = useState({ show: false, saving: false, message: '' });
+  const [isInitialLoad, setIsInitialLoad] = useState(true); // Flag to prevent saving during initial load
   const [userStats, setUserStats] = useState({
     totalStudySets: 0,
     totalCards: 0,
@@ -17,45 +18,84 @@ export const StudySetProvider = ({ children }) => {
 
   // Load data from localStorage on mount
   useEffect(() => {
-    const savedSets = localStorage.getItem('quizcraft-study-sets');
-    const savedStats = localStorage.getItem('quizcraft-user-stats');
-    const savedProgress = localStorage.getItem('quizcraft-study-progress');
-    
-    if (savedSets) {
-      try {
-        const parsedSets = JSON.parse(savedSets);
-        setStudySets(parsedSets);
-      } catch (error) {
-        console.error('Error loading study sets:', error);
+    // Small delay to ensure component is fully mounted
+    const loadData = () => {
+      console.log('🔄 Loading data from localStorage...');
+      const savedSets = localStorage.getItem('quizcraft-study-sets');
+      const savedStats = localStorage.getItem('quizcraft-user-stats');
+      const savedProgress = localStorage.getItem('quizcraft-study-progress');
+      
+      console.log('📚 Raw localStorage data:', savedSets);
+      
+      if (savedSets) {
+        try {
+          const parsedSets = JSON.parse(savedSets);
+          console.log('✅ Parsed study sets:', parsedSets);
+          console.log('🔄 Setting studySets state...');
+          setStudySets(parsedSets);
+        } catch (error) {
+          console.error('❌ Error loading study sets:', error);
+        }
+      } else {
+        console.log('📝 No saved study sets found in localStorage');
       }
-    }
-    
-    if (savedStats) {
-      try {
-        const parsedStats = JSON.parse(savedStats);
-        setUserStats(parsedStats);
-      } catch (error) {
-        console.error('Error loading user stats:', error);
+      
+      if (savedStats) {
+        try {
+          const parsedStats = JSON.parse(savedStats);
+          setUserStats(parsedStats);
+        } catch (error) {
+          console.error('Error loading user stats:', error);
+        }
       }
-    }
 
-    if (savedProgress) {
-      try {
-        const parsedProgress = JSON.parse(savedProgress);
-        setStudyProgress(parsedProgress);
-      } catch (error) {
-        console.error('Error loading study progress:', error);
+      if (savedProgress) {
+        try {
+          const parsedProgress = JSON.parse(savedProgress);
+          setStudyProgress(parsedProgress);
+        } catch (error) {
+          console.error('Error loading study progress:', error);
+        }
       }
-    }
+      
+      // Mark initial load as complete
+      setTimeout(() => {
+        setIsInitialLoad(false);
+        console.log('🏁 Initial load complete, enabling auto-save');
+      }, 200);
+    };
+
+    // Load immediately and also with a small delay as backup
+    loadData();
+    const timeoutId = setTimeout(loadData, 100);
+    
+    return () => clearTimeout(timeoutId);
   }, []);
 
   // Save to localStorage whenever studySets changes
   useEffect(() => {
+    // Don't save during initial load to prevent overwriting loaded data
+    if (isInitialLoad) {
+      console.log('⏸️ Skipping save during initial load');
+      return;
+    }
+    
+    console.log('💾 Attempting to save study sets:', studySets);
+    
     if (studySets.length > 0) {
       setSaveStatus({ show: false, saving: true, message: '' });
     }
     
-    localStorage.setItem('quizcraft-study-sets', JSON.stringify(studySets));
+    try {
+      localStorage.setItem('quizcraft-study-sets', JSON.stringify(studySets));
+      console.log('✅ Successfully saved to localStorage');
+      
+      // Verify the save
+      const verification = localStorage.getItem('quizcraft-study-sets');
+      console.log('🔍 Verification - data in localStorage:', verification);
+    } catch (error) {
+      console.error('❌ Error saving to localStorage:', error);
+    }
     
     // Update stats
     const totalCards = studySets.reduce((sum, set) => sum + (set.cards?.length || 0), 0);
@@ -70,7 +110,7 @@ export const StudySetProvider = ({ children }) => {
         setSaveStatus({ show: true, saving: false, message: 'Study sets saved!' });
       }, 500);
     }
-  }, [studySets]);
+  }, [studySets, isInitialLoad]);
 
   // Save stats to localStorage whenever userStats changes
   useEffect(() => {

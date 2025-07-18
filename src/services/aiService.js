@@ -16,11 +16,26 @@ class AIService {
 
     try {
       this.genAI = new GoogleGenerativeAI(this.apiKey);
-      this.model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      this.initialized = true;
-      return true;
+      // Use the model from environment variable or fallback to gemini-1.5-flash
+      const modelName = import.meta.env.VITE_AI_MODEL || "gemini-1.5-flash";
+      console.log('Attempting to initialize with model:', modelName);
+      this.model = this.genAI.getGenerativeModel({ model: modelName });
+      
+      // Test the model with a simple request
+      try {
+        const testResult = await this.model.generateContent("Hello");
+        const testResponse = await testResult.response;
+        console.log('AI model test successful:', testResponse.text().substring(0, 50));
+        this.initialized = true;
+        console.log(`AI service initialized with model: ${modelName}`);
+        return true;
+      } catch (testError) {
+        console.error('AI model test failed:', testError);
+        throw testError;
+      }
     } catch (error) {
       console.error('Failed to initialize AI service:', error);
+      this.initialized = false;
       return false;
     }
   }
@@ -322,6 +337,153 @@ Focus on:
     } catch (error) {
       console.error('Error improving flashcard:', error);
       throw new Error('Failed to improve flashcard. Please try again.');
+    }
+  }
+
+  async generateFlashcardsFromDocument(file, options = {}) {
+    if (!this.isAvailable()) {
+      throw new Error('AI service not available');
+    }
+
+    const {
+      count = 15,
+      difficulty = 'medium',
+      subject = 'general'
+    } = options;
+
+    try {
+      // Convert file to generative part for Gemini
+      const fileData = await this.fileToGenerativePart(file);
+      
+      const prompt = `
+Analyze this document and create ${count} educational flashcards from its content.
+
+Requirements:
+- Difficulty level: ${difficulty}
+- Subject area: ${subject}
+- Extract key concepts, definitions, and important facts
+- Create clear, concise questions and comprehensive answers
+- Focus on the most important information for learning
+- Ensure variety in question types (definitions, explanations, applications)
+
+Format your response as a JSON array:
+[
+  {
+    "term": "Question or key term",
+    "definition": "Answer or definition"
+  }
+]
+
+Only return the JSON array, no other text.
+      `;
+
+      const result = await this.model.generateContent([prompt, fileData]);
+      const response = await result.response;
+      const text = response.text();
+      
+      // Try to extract JSON from the response
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) {
+        throw new Error('Invalid response format from AI');
+      }
+      
+      const flashcards = JSON.parse(jsonMatch[0]);
+      
+      if (!Array.isArray(flashcards)) {
+        throw new Error('Expected an array of flashcards');
+      }
+      
+      return flashcards;
+    } catch (error) {
+      console.error('Error generating flashcards from document:', error);
+      throw new Error('Failed to generate flashcards from document');
+    }
+  }
+
+  /**
+   * Convert file to generative part for Gemini API
+   */
+  async fileToGenerativePart(file) {
+    const base64EncodedData = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    return {
+      inlineData: {
+        data: base64EncodedData,
+        mimeType: file.type,
+      },
+    };
+  }
+
+  async generateStudyGuide(studySet, userProgress = {}) {
+    if (!this.isAvailable()) {
+      throw new Error('AI service not available');
+    }
+
+    const prompt = `
+Create a comprehensive study guide for this flashcard set.
+
+Study Set: ${studySet.title}
+Flashcards: ${JSON.stringify(studySet.cards)}
+
+Create a study guide that includes:
+1. Overview of key concepts
+2. Detailed explanations of important topics
+3. Memory techniques and mnemonics
+4. Practice questions with answers
+5. Study tips specific to this content
+6. Common mistakes to avoid
+7. Connections between concepts
+
+Format as JSON:
+{
+  "title": "Study Guide Title",
+  "overview": "Brief overview of the topic",
+  "keyPoints": [
+    {
+      "concept": "Key concept",
+      "explanation": "Detailed explanation",
+      "memoryTip": "Mnemonic or memory technique"
+    }
+  ],
+  "practiceQuestions": [
+    {
+      "question": "Practice question",
+      "answer": "Detailed answer"
+    }
+  ],
+  "studyTips": ["Tip 1", "Tip 2", "Tip 3"],
+  "commonMistakes": ["Mistake 1", "Mistake 2"],
+  "conceptConnections": [
+    {
+      "concepts": ["Concept A", "Concept B"],
+      "relationship": "How they relate"
+    }
+  ]
+}
+
+Only return the JSON object.
+    `;
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('Invalid response format from AI');
+      }
+      
+      const studyGuide = JSON.parse(jsonMatch[0]);
+      return studyGuide;
+    } catch (error) {
+      console.error('Error generating study guide:', error);
+      throw new Error('Failed to generate study guide');
     }
   }
 }

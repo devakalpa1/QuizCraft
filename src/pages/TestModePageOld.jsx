@@ -258,15 +258,13 @@ const TestModePage = () => {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [score, setScore] = useState(0);
   const [showScore, setShowScore] = useState(false);
+  const [options, setOptions] = useState([]);
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [testStartTime] = useState(Date.now());
-  
-  // New state for pre-generated questions
-  const [testQuestions, setTestQuestions] = useState([]);
-  const [isGeneratingTest, setIsGeneratingTest] = useState(true);
+  const [isGeneratingOptions, setIsGeneratingOptions] = useState(false);
   const [isAiAvailable, setIsAiAvailable] = useState(false);
-  const [testError, setTestError] = useState('');
+  const [aiError, setAiError] = useState('');
 
   useEffect(() => {
     const set = getStudySetById(id);
@@ -276,138 +274,72 @@ const TestModePage = () => {
     }
     setActiveSet(set);
     
-    // Check AI availability and generate test
-    const initializeTest = async () => {
+    // Check AI availability
+    const checkAI = async () => {
       try {
-        console.log('Initializing AI service...');
-        const aiInitialized = await aiService.initialize();
-        const aiAvailable = aiService.isAvailable();
-        console.log('AI initialization result:', aiInitialized, 'AI available:', aiAvailable);
-        setIsAiAvailable(aiAvailable);
-        await generateAllTestQuestions(set, aiAvailable);
+        await aiService.initialize();
+        setIsAiAvailable(aiService.isAvailable());
       } catch (error) {
-        console.error('Test initialization failed:', error);
+        console.error('AI service initialization failed:', error);
         setIsAiAvailable(false);
-        await generateAllTestQuestions(set, false); // Fallback to basic questions
       }
     };
-    
-    initializeTest();
+    checkAI();
   }, [id, getStudySetById, navigate]);
 
-  const generateAllTestQuestions = async (studySet, aiAvailable) => {
-    if (!studySet || studySet.cards.length === 0) return;
-    
-    setIsGeneratingTest(true);
-    setTestError('');
-    
-    console.log('Generating test questions with AI available:', aiAvailable);
-    
-    try {
-      const questions = [];
-      
-      // Generate questions for all flashcards
-      for (let i = 0; i < studySet.cards.length; i++) {
-        const currentCard = studySet.cards[i];
-        let options = [];
-        
-        console.log(`Generating question ${i + 1} for card:`, currentCard.term);
-        
-        if (aiAvailable) {
-          // Use AI to generate intelligent distractors
-          try {
-            console.log('Calling AI for distractors...');
-            const distractors = await generateIntelligentDistractors(currentCard, studySet.cards.filter((_, idx) => idx !== i));
-            console.log('AI generated distractors:', distractors);
-            options = [currentCard.definition, ...distractors].sort(() => 0.5 - Math.random());
-          } catch (error) {
-            console.warn(`AI generation failed for question ${i + 1}, using fallback:`, error);
-            // Fallback to basic method for this question
-            const wrongAnswers = studySet.cards
-              .filter((_, index) => index !== i)
-              .map((card) => card.definition)
-              .sort(() => 0.5 - Math.random())
-              .slice(0, 3);
-            options = [currentCard.definition, ...wrongAnswers].sort(() => 0.5 - Math.random());
-          }
-        } else {
-          console.log('Using basic fallback method');
-          // Basic fallback method
-          const wrongAnswers = studySet.cards
-            .filter((_, index) => index !== i)
-            .map((card) => card.definition)
-            .sort(() => 0.5 - Math.random())
-            .slice(0, 3);
-          options = [currentCard.definition, ...wrongAnswers].sort(() => 0.5 - Math.random());
-        }
-        
-        questions.push({
-          question: currentCard.term,
-          correctAnswer: currentCard.definition,
-          options: options,
-          cardIndex: i
-        });
-      }
-      
-      setTestQuestions(questions);
-      console.log(`Generated ${questions.length} test questions ${aiAvailable ? 'with AI' : 'with basic method'}`);
-    } catch (error) {
-      console.error('Error generating test questions:', error);
-      setTestError('Failed to generate test questions. Please try again.');
-    } finally {
-      setIsGeneratingTest(false);
+  useEffect(() => {
+    if (activeSet) {
+      generateOptions();
     }
-  };
+  }, [activeSet, currentQuestionIndex]);
 
-  const generateIntelligentDistractors = async (currentCard, otherCards) => {
-    if (!aiService.isAvailable()) {
-      throw new Error('AI not available');
+  const generateIntelligentDistractors = async (currentCard, relatedCards) => {
+    if (!isAiAvailable) {
+      // Fallback to basic method if AI is not available
+      return relatedCards
+        .filter(card => card !== currentCard)
+        .map(card => card.definition)
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 3);
     }
 
-    console.log('Generating intelligent distractors for:', currentCard.term);
-
-    const prompt = `
-Generate 3 plausible but incorrect answers for this flashcard question. The distractors should be:
-1. Related to the topic but clearly wrong
-2. Challenging enough to test real understanding  
-3. Not obviously incorrect
-4. Similar in length and style to the correct answer
-
-Question: ${currentCard.term}
-Correct Answer: ${currentCard.definition}
-
-Related flashcards for context:
-${otherCards.slice(0, 8).map(card => `- ${card.term}: ${card.definition}`).join('\n')}
-
-Return only a JSON array of 3 distractor strings:
-["distractor 1", "distractor 2", "distractor 3"]
-    `;
-
-    console.log('Sending prompt to AI:', prompt);
-
-    const result = await aiService.model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-    
-    console.log('AI response:', text);
-    
     try {
-      // Try to extract JSON array from response
-      const jsonMatch = text.match(/\[[\s\S]*?\]/);
-      if (jsonMatch) {
-        const distractors = JSON.parse(jsonMatch[0]);
+      const prompt = `
+        Generate 3 plausible but incorrect answers for this flashcard question. The distractors should be:
+        1. Related to the topic but clearly wrong
+        2. Challenging enough to test real understanding
+        3. Not obviously incorrect
+        4. Similar in length and style to the correct answer
+        
+        Question: ${currentCard.term}
+        Correct Answer: ${currentCard.definition}
+        
+        Related flashcards for context:
+        ${relatedCards.slice(0, 5).map(card => `- ${card.term}: ${card.definition}`).join('\n')}
+        
+        Return only a JSON array of 3 distractor strings:
+        ["distractor 1", "distractor 2", "distractor 3"]
+      `;
+
+      const result = await aiService.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      try {
+        const distractors = JSON.parse(text);
         if (Array.isArray(distractors) && distractors.length === 3) {
-          console.log('Successfully parsed AI distractors:', distractors);
           return distractors;
         }
+      } catch (parseError) {
+        console.warn('Failed to parse AI response, using fallback');
       }
-    } catch (parseError) {
-      console.warn('Failed to parse AI response:', parseError);
+    } catch (error) {
+      console.warn('AI distractor generation failed, using fallback:', error);
     }
 
-    console.log('Falling back to related definitions');
-    // Fallback: use related flashcard definitions with slight modifications
-    const relatedDefinitions = otherCards
+    // Fallback: use related flashcard definitions + some modifications
+    const relatedDefinitions = relatedCards
+      .filter(card => card !== currentCard)
       .map(card => card.definition)
       .sort(() => 0.5 - Math.random())
       .slice(0, 3);
@@ -415,16 +347,54 @@ Return only a JSON array of 3 distractor strings:
     return relatedDefinitions;
   };
 
+  const generateOptions = async () => {
+    if (!activeSet || activeSet.cards.length === 0) return;
+    
+    setIsGeneratingOptions(true);
+    setAiError('');
+    
+    try {
+      const currentCard = activeSet.cards[currentQuestionIndex];
+      
+      // Get related flashcards (prefer ones that might be conceptually similar)
+      const otherCards = activeSet.cards.filter((_, index) => index !== currentQuestionIndex);
+      
+      // Generate intelligent distractors
+      const distractors = await generateIntelligentDistractors(currentCard, otherCards);
+      
+      // Combine correct answer with distractors and shuffle
+      const allOptions = [currentCard.definition, ...distractors]
+        .sort(() => 0.5 - Math.random());
+      
+      setOptions(allOptions);
+    } catch (error) {
+      console.error('Error generating options:', error);
+      setAiError('Failed to generate test options. Using fallback method.');
+      
+      // Fallback to simple method
+      const currentCard = activeSet.cards[currentQuestionIndex];
+      const wrongAnswers = activeSet.cards
+        .filter((_, index) => index !== currentQuestionIndex)
+        .map((card) => card.definition);
+      
+      const shuffledWrongAnswers = wrongAnswers.sort(() => 0.5 - Math.random()).slice(0, 3);
+      const allOptions = [currentCard.definition, ...shuffledWrongAnswers].sort(() => 0.5 - Math.random());
+      setOptions(allOptions);
+    } finally {
+      setIsGeneratingOptions(false);
+    }
+  };
+
   const handleAnswerOptionClick = (option) => {
-    if (!isSubmitted && !isGeneratingTest) {
+    if (!isSubmitted && !isGeneratingOptions) {
       setSelectedAnswer(option);
     }
   };
 
   const handleSubmit = () => {
-    if (selectedAnswer && !isGeneratingTest && testQuestions.length > 0) {
+    if (selectedAnswer && !isGeneratingOptions) {
       setIsSubmitted(true);
-      if (selectedAnswer === testQuestions[currentQuestionIndex].correctAnswer) {
+      if (selectedAnswer === activeSet.cards[currentQuestionIndex].definition) {
         setScore(score + 1);
       }
     }
@@ -432,16 +402,17 @@ Return only a JSON array of 3 distractor strings:
 
   const handleNextQuestion = () => {
     const nextQuestion = currentQuestionIndex + 1;
-    if (nextQuestion < testQuestions.length) {
+    if (nextQuestion < activeSet.cards.length) {
       setCurrentQuestionIndex(nextQuestion);
       setSelectedAnswer(null);
       setIsSubmitted(false);
+      setAiError('');
     } else {
       setShowScore(true);
       
       // Record test completion
-      const finalScore = score + (selectedAnswer === testQuestions[currentQuestionIndex].correctAnswer ? 1 : 0);
-      const percentage = Math.round((finalScore / testQuestions.length) * 100);
+      const finalScore = score + (selectedAnswer === activeSet.cards[currentQuestionIndex].definition ? 1 : 0);
+      const percentage = Math.round((finalScore / activeSet.cards.length) * 100);
       const duration = Math.round((Date.now() - testStartTime) / 1000);
       
       recordStudySession(activeSet.id, percentage, duration);
@@ -466,96 +437,20 @@ Return only a JSON array of 3 distractor strings:
     return (
       <TestModePageContainer>
         <div style={{ textAlign: 'center', padding: '4rem 0' }}>
-          <div style={{ 
-            width: '40px', 
-            height: '40px', 
-            border: '3px solid var(--border-color)', 
-            borderTop: '3px solid var(--primary-color)', 
-            borderRadius: '50%', 
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto var(--space-4)'
-          }}></div>
-          <p>Loading study set...</p>
+          <p>Loading test...</p>
         </div>
       </TestModePageContainer>
     );
   }
 
-  if (isGeneratingTest) {
-    return (
-      <TestModePageContainer>
-        <div style={{ textAlign: 'center', padding: '4rem 0' }}>
-          <div style={{ 
-            width: '60px', 
-            height: '60px', 
-            border: '4px solid var(--border-color)', 
-            borderTop: '4px solid var(--primary-color)', 
-            borderRadius: '50%', 
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto var(--space-6)'
-          }}></div>
-          <h2 style={{ marginBottom: 'var(--space-4)', color: 'var(--text-color)' }}>
-            Generating Your Test
-          </h2>
-          <p style={{ color: 'var(--text-color-secondary)', marginBottom: 'var(--space-2)' }}>
-            {isAiAvailable 
-              ? '🤖 Creating intelligent questions with AI-powered distractors...'
-              : '📝 Preparing test questions...'
-            }
-          </p>
-          <p style={{ color: 'var(--text-color-muted)', fontSize: 'var(--font-size-sm)' }}>
-            This may take a moment for the best experience
-          </p>
-          
-          {testError && (
-            <div style={{ 
-              margin: 'var(--space-4) auto 0', 
-              maxWidth: '400px',
-              padding: 'var(--space-3)', 
-              background: 'rgba(239, 68, 68, 0.1)', 
-              border: '1px solid var(--error-color)', 
-              borderRadius: 'var(--radius-md)', 
-              color: 'var(--error-color)',
-              fontSize: 'var(--font-size-sm)'
-            }}>
-              {testError}
-            </div>
-          )}
-        </div>
-      </TestModePageContainer>
-    );
-  }
-
-  if (testQuestions.length === 0) {
-    return (
-      <TestModePageContainer>
-        <div style={{ textAlign: 'center', padding: '4rem 0' }}>
-          <h2 style={{ color: 'var(--error-color)', marginBottom: 'var(--space-4)' }}>
-            Unable to Generate Test
-          </h2>
-          <p style={{ color: 'var(--text-color-secondary)', marginBottom: 'var(--space-6)' }}>
-            There was an issue creating the test questions. Please try again.
-          </p>
-          <Button 
-            variant="primary"
-            onClick={() => window.location.reload()}
-          >
-            Try Again
-          </Button>
-        </div>
-      </TestModePageContainer>
-    );
-  }
-
-  const currentQuestion = testQuestions[currentQuestionIndex];
-  const percentage = Math.round((score / testQuestions.length) * 100);
+  const percentage = Math.round((score / activeSet.cards.length) * 100);
 
   return (
     <TestModePageContainer>
       {showScore ? (
         <ScoreContainer>
           <ScoreTitle>Test Complete!</ScoreTitle>
-          <ScoreDisplay>{score} / {testQuestions.length}</ScoreDisplay>
+          <ScoreDisplay>{score} / {activeSet.cards.length}</ScoreDisplay>
           <ScorePercentage $percentage={percentage}>
             {percentage}%
           </ScorePercentage>
@@ -604,50 +499,92 @@ Return only a JSON array of 3 distractor strings:
           <TestHeader>
             <TestTitle>{activeSet.title} - Test Mode</TestTitle>
             <ProgressBar 
-              progress={(currentQuestionIndex / testQuestions.length) * 100}
+              progress={(currentQuestionIndex / activeSet.cards.length) * 100}
               current={currentQuestionIndex + 1}
-              total={testQuestions.length}
+              total={activeSet.cards.length}
               correct={score}
               incorrect={currentQuestionIndex + 1 - score - (isSubmitted ? 1 : 0)}
               label="Test Progress"
               showStats={false}
             />
-            <div style={{ 
-              marginTop: 'var(--space-3)', 
-              padding: 'var(--space-2)', 
-              background: isAiAvailable 
-                ? 'rgba(34, 197, 94, 0.1)' 
-                : 'rgba(255, 193, 7, 0.1)', 
-              border: `1px solid ${isAiAvailable ? 'var(--success-color)' : '#ffc107'}`, 
-              borderRadius: 'var(--radius-md)', 
-              fontSize: 'var(--font-size-sm)',
-              textAlign: 'center'
-            }}>
-              {isAiAvailable 
-                ? '✨ AI-enhanced test with intelligent distractors'
-                : '📝 Standard test mode'
-              }
-            </div>
+            {!isAiAvailable && (
+              <div style={{ 
+                marginTop: 'var(--space-3)', 
+                padding: 'var(--space-2)', 
+                background: 'rgba(255, 193, 7, 0.1)', 
+                border: '1px solid #ffc107', 
+                borderRadius: 'var(--radius-md)', 
+                fontSize: 'var(--font-size-sm)',
+                textAlign: 'center'
+              }}>
+                ⚠️ AI features unavailable - using basic question generation
+              </div>
+            )}
+            {isAiAvailable && (
+              <div style={{ 
+                marginTop: 'var(--space-3)', 
+                padding: 'var(--space-2)', 
+                background: 'rgba(34, 197, 94, 0.1)', 
+                border: '1px solid var(--success-color)', 
+                borderRadius: 'var(--radius-md)', 
+                fontSize: 'var(--font-size-sm)',
+                textAlign: 'center'
+              }}>
+                ✨ AI-enhanced test with intelligent distractors
+              </div>
+            )}
           </TestHeader>
 
           <QuestionContainer>
             <QuestionNumber>
-              Question {currentQuestionIndex + 1} of {testQuestions.length}
+              Question {currentQuestionIndex + 1} of {activeSet.cards.length}
             </QuestionNumber>
-            <QuestionText>{currentQuestion.question}</QuestionText>
+            <QuestionText>{activeSet.cards[currentQuestionIndex].term}</QuestionText>
+            {isGeneratingOptions && (
+              <div style={{ textAlign: 'center', marginTop: 'var(--space-4)', color: 'var(--text-color-secondary)' }}>
+                <div style={{ 
+                  display: 'inline-block',
+                  width: '20px', 
+                  height: '20px', 
+                  border: '2px solid var(--border-color)', 
+                  borderTop: '2px solid var(--primary-color)', 
+                  borderRadius: '50%', 
+                  animation: 'spin 1s linear infinite',
+                  marginRight: 'var(--space-2)'
+                }}></div>
+                Generating intelligent answer options...
+              </div>
+            )}
           </QuestionContainer>
 
+          {aiError && (
+            <div style={{ 
+              margin: '0 auto var(--space-4)', 
+              maxWidth: '600px',
+              padding: 'var(--space-3)', 
+              background: 'rgba(239, 68, 68, 0.1)', 
+              border: '1px solid var(--error-color)', 
+              borderRadius: 'var(--radius-md)', 
+              color: 'var(--error-color)',
+              fontSize: 'var(--font-size-sm)',
+              textAlign: 'center'
+            }}>
+              {aiError}
+            </div>
+          )}
+
           <OptionsContainer>
-            {currentQuestion.options.map((option, index) => (
+            {options.map((option, index) => (
               <OptionButton
                 key={index}
                 onClick={() => handleAnswerOptionClick(option)}
                 className={`
                   ${selectedAnswer === option ? 'selected' : ''}
-                  ${isSubmitted && option === currentQuestion.correctAnswer ? 'correct' : ''}
-                  ${isSubmitted && selectedAnswer === option && option !== currentQuestion.correctAnswer ? 'incorrect' : ''}
-                  ${isSubmitted ? 'disabled' : ''}
+                  ${isSubmitted && option === activeSet.cards[currentQuestionIndex].definition ? 'correct' : ''}
+                  ${isSubmitted && selectedAnswer === option && option !== activeSet.cards[currentQuestionIndex].definition ? 'incorrect' : ''}
+                  ${isSubmitted || isGeneratingOptions ? 'disabled' : ''}
                 `}
+                disabled={isGeneratingOptions}
               >
                 <span>{option}</span>
               </OptionButton>
@@ -660,15 +597,16 @@ Return only a JSON array of 3 distractor strings:
                 variant="primary" 
                 size="lg"
                 onClick={handleNextQuestion}
+                disabled={isGeneratingOptions}
               >
-                {currentQuestionIndex + 1 === testQuestions.length ? 'See Results' : 'Next Question →'}
+                {currentQuestionIndex + 1 === activeSet.cards.length ? 'See Results' : 'Next Question →'}
               </Button>
             ) : (
               <Button 
                 variant="primary" 
                 size="lg"
                 onClick={handleSubmit}
-                disabled={!selectedAnswer}
+                disabled={!selectedAnswer || isGeneratingOptions}
               >
                 Submit Answer
               </Button>
