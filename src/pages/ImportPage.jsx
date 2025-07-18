@@ -1,9 +1,10 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 import Papa from 'papaparse';
 import { StudySetContext } from '../context/StudySetContext';
 import Button from '../components/Button';
+import aiService from '../services/aiService';
 
 const ImportPageContainer = styled.div`
   max-width: 800px;
@@ -209,14 +210,223 @@ const PreviewCount = styled.div`
   margin-bottom: var(--space-3);
 `;
 
+const AISection = styled.div`
+  background: linear-gradient(135deg, var(--card-background-color) 0%, rgba(66, 85, 255, 0.05) 100%);
+  border-radius: var(--radius-xl);
+  border: 2px solid var(--primary-color);
+  padding: var(--space-8);
+  margin-bottom: var(--space-6);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  position: relative;
+  
+  &::before {
+    content: '✨';
+    position: absolute;
+    top: var(--space-4);
+    right: var(--space-4);
+    font-size: var(--font-size-2xl);
+  }
+`;
+
+const AIToggle = styled.div`
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+`;
+
+const AILabel = styled.label`
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-color);
+`;
+
+const AICheckbox = styled.input`
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary-color);
+`;
+
+const AIOptions = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+`;
+
+const AIOptionCard = styled.div`
+  background: var(--surface-color);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  
+  &:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+  }
+  
+  &.selected {
+    border-color: var(--primary-color);
+    background: rgba(66, 85, 255, 0.05);
+  }
+`;
+
+const OptionIcon = styled.div`
+  font-size: var(--font-size-2xl);
+  margin-bottom: var(--space-2);
+`;
+
+const OptionTitle = styled.h4`
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  margin-bottom: var(--space-1);
+  color: var(--text-color);
+`;
+
+const OptionDescription = styled.p`
+  font-size: var(--font-size-sm);
+  color: var(--text-color-secondary);
+  line-height: 1.4;
+`;
+
+const ConfigSection = styled.div`
+  background: var(--background-secondary);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin-top: var(--space-4);
+  border: 1px solid var(--border-color);
+`;
+
+const ConfigGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+`;
+
+const ConfigItem = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+`;
+
+const ConfigLabel = styled.label`
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-color);
+`;
+
+const ConfigSelect = styled.select`
+  background: var(--card-background-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  
+  &:focus {
+    outline: none;
+    border-color: var(--primary-color);
+  }
+`;
+
+const ConfigInput = styled.input`
+  background: var(--card-background-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-size-sm);
+  
+  &:focus {
+    outline: none;
+    border-color: var(--primary-color);
+  }
+`;
+
+const LoadingSpinner = styled.div`
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top: 2px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: var(--space-2);
+  
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+`;
+
+const ErrorMessage = styled.div`
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--error-color);
+  border: 1px solid var(--error-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-top: var(--space-3);
+  font-size: var(--font-size-sm);
+`;
+
+const SuccessMessage = styled.div`
+  background: rgba(34, 197, 94, 0.1);
+  color: var(--success-color);
+  border: 1px solid var(--success-color);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-top: var(--space-3);
+  font-size: var(--font-size-sm);
+`;
+
 const ImportPage = () => {
   const [textData, setTextData] = useState('');
   const [fileData, setFileData] = useState(null);
   const [fileName, setFileName] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [previewCards, setPreviewCards] = useState([]);
+  
+  // AI-related state
+  const [useAI, setUseAI] = useState(false);
+  const [aiMode, setAiMode] = useState('document'); // 'document' or 'text'
+  const [aiDocument, setAiDocument] = useState(null);
+  const [aiDocumentName, setAiDocumentName] = useState('');
+  const [aiText, setAiText] = useState('');
+  const [aiConfig, setAiConfig] = useState({
+    numCards: 15,
+    difficulty: 'medium',
+    subject: 'general',
+    includeStudyGuide: false
+  });
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiSuccess, setAiSuccess] = useState('');
+  const [isAiAvailable, setIsAiAvailable] = useState(false);
+  
   const { addStudySet } = useContext(StudySetContext);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Check if AI service is available
+    const checkAI = async () => {
+      try {
+        await aiService.initialize();
+        setIsAiAvailable(aiService.isAvailable());
+      } catch (error) {
+        console.error('AI service initialization failed:', error);
+        setIsAiAvailable(false);
+      }
+    };
+    checkAI();
+  }, []);
 
   const handleFileChange = (file) => {
     setFileData(file);
@@ -233,6 +443,67 @@ const ImportPage = () => {
         setPreviewCards(cards);
       }
     });
+  };
+
+  const handleAiDocumentChange = (file) => {
+    setAiDocument(file);
+    setAiDocumentName(file.name);
+    setAiError('');
+    setAiSuccess('');
+  };
+
+  const handleGenerateFromAI = async () => {
+    if (!isAiAvailable) {
+      setAiError('AI service is not available. Please check your API key configuration.');
+      return;
+    }
+
+    if (aiMode === 'document' && !aiDocument) {
+      setAiError('Please select a document to generate flashcards from.');
+      return;
+    }
+
+    if (aiMode === 'text' && !aiText.trim()) {
+      setAiError('Please enter some text to generate flashcards from.');
+      return;
+    }
+
+    setIsGenerating(true);
+    setAiError('');
+    setAiSuccess('');
+
+    try {
+      let generatedCards;
+      
+      if (aiMode === 'document') {
+        generatedCards = await aiService.generateFlashcardsFromDocument(aiDocument, {
+          count: aiConfig.numCards,
+          difficulty: aiConfig.difficulty,
+          subject: aiConfig.subject
+        });
+      } else {
+        generatedCards = await aiService.generateFlashcardsFromText(aiText, {
+          count: aiConfig.numCards,
+          difficulty: aiConfig.difficulty,
+          subject: aiConfig.subject
+        });
+      }
+
+      if (generatedCards && generatedCards.length > 0) {
+        setPreviewCards(generatedCards.slice(0, 10)); // Show first 10 for preview
+        setAiSuccess(`Successfully generated ${generatedCards.length} flashcards using AI!`);
+        
+        // Store generated cards for import
+        setTextData(generatedCards.map(card => `${card.term},${card.definition}`).join('\n'));
+      } else {
+        setAiError('No flashcards could be generated from the provided content.');
+      }
+    } catch (error) {
+      console.error('AI generation error:', error);
+      setAiError(error.message || 'Failed to generate flashcards. Please try again.');
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleFileInputChange = (e) => {
@@ -262,6 +533,26 @@ const ImportPage = () => {
   };
 
   const handleImport = async () => {
+    if (useAI && previewCards.length > 0) {
+      // Import AI-generated cards
+      setIsImporting(true);
+      
+      try {
+        const title = aiDocumentName 
+          ? aiDocumentName.replace(/\.[^/.]+$/, "") + " (AI Generated)"
+          : 'AI Generated Study Set';
+        
+        const newSet = addStudySet({ title, cards: previewCards });
+        navigate(`/studyset/${newSet.id}`);
+      } catch (error) {
+        console.error('Error importing AI-generated cards:', error);
+        alert('An error occurred while importing the flashcards.');
+        setIsImporting(false);
+      }
+      return;
+    }
+
+    // Traditional CSV import
     const dataToParse = fileData || textData;
 
     if (!dataToParse) {
@@ -303,7 +594,7 @@ const ImportPage = () => {
       <Header>
         <Title>Import Study Set</Title>
         <Description>
-          Import your existing flashcards from a CSV file or paste them directly. We'll automatically create a new study set for you.
+          Import your existing flashcards from a CSV file, paste them directly, or use AI to automatically generate flashcards from documents, PDFs, and text content.
         </Description>
       </Header>
 
@@ -379,6 +670,193 @@ Term 3,Definition 3`}</ExampleText>
         />
       </ImportSection>
 
+      {/* AI-Powered Import Section */}
+      <AISection>
+        <SectionTitle>
+          <span>🤖</span>
+          AI-Powered Import
+        </SectionTitle>
+        <SectionDescription>
+          Use AI to automatically generate flashcards from documents, PDFs, text, or study materials. 
+          Just upload your content and let AI create optimized flashcards for you!
+        </SectionDescription>
+
+        <AIToggle>
+          <AILabel>
+            <AICheckbox
+              type="checkbox"
+              checked={useAI}
+              onChange={(e) => {
+                setUseAI(e.target.checked);
+                if (e.target.checked) {
+                  setTextData('');
+                  setFileData(null);
+                  setFileName('');
+                  setPreviewCards([]);
+                }
+              }}
+            />
+            Enable AI-powered flashcard generation
+          </AILabel>
+          {!isAiAvailable && (
+            <ErrorMessage>
+              AI service unavailable. Please configure your Gemini API key in the .env file.
+            </ErrorMessage>
+          )}
+        </AIToggle>
+
+        {useAI && isAiAvailable && (
+          <>
+            <AIOptions>
+              <AIOptionCard 
+                className={aiMode === 'document' ? 'selected' : ''}
+                onClick={() => setAiMode('document')}
+              >
+                <OptionIcon>📄</OptionIcon>
+                <OptionTitle>Document Upload</OptionTitle>
+                <OptionDescription>
+                  Upload PDF, Word documents, or text files. AI will extract key concepts and create flashcards.
+                </OptionDescription>
+              </AIOptionCard>
+
+              <AIOptionCard 
+                className={aiMode === 'text' ? 'selected' : ''}
+                onClick={() => setAiMode('text')}
+              >
+                <OptionIcon>✍️</OptionIcon>
+                <OptionTitle>Text Content</OptionTitle>
+                <OptionDescription>
+                  Paste study notes, articles, or any text content. AI will identify important concepts.
+                </OptionDescription>
+              </AIOptionCard>
+            </AIOptions>
+
+            {aiMode === 'document' && (
+              <ConfigSection>
+                <SectionTitle style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--space-3)' }}>
+                  <span>📁</span>
+                  Upload Document
+                </SectionTitle>
+                
+                <FileUploadArea 
+                  className={aiDocumentName ? 'has-file' : ''}
+                  onClick={() => document.getElementById('ai-file-input').click()}
+                >
+                  <FileUploadIcon>
+                    {aiDocumentName ? '✅' : '📁'}
+                  </FileUploadIcon>
+                  <FileUploadText>
+                    {aiDocumentName ? 'Document Selected' : 'Click to select a document'}
+                  </FileUploadText>
+                  <FileUploadSubtext>
+                    {aiDocumentName ? 'Click to choose a different file' : 'Supports PDF, Word docs, and text files'}
+                  </FileUploadSubtext>
+                  
+                  {aiDocumentName && (
+                    <SelectedFile onClick={(e) => e.stopPropagation()}>
+                      <FileName>{aiDocumentName}</FileName>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => {
+                          setAiDocument(null);
+                          setAiDocumentName('');
+                          setPreviewCards([]);
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </SelectedFile>
+                  )}
+                </FileUploadArea>
+
+                <HiddenFileInput
+                  id="ai-file-input"
+                  type="file"
+                  accept=".pdf,.doc,.docx,.txt,.rtf"
+                  onChange={(e) => {
+                    const file = e.target.files[0];
+                    if (file) handleAiDocumentChange(file);
+                  }}
+                />
+              </ConfigSection>
+            )}
+
+            {aiMode === 'text' && (
+              <ConfigSection>
+                <SectionTitle style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--space-3)' }}>
+                  <span>✍️</span>
+                  Enter Text Content
+                </SectionTitle>
+                
+                <TextArea
+                  value={aiText}
+                  onChange={(e) => setAiText(e.target.value)}
+                  placeholder="Paste your study notes, article content, or any educational material here. The AI will analyze it and create relevant flashcards..."
+                  style={{ height: '250px' }}
+                />
+              </ConfigSection>
+            )}
+
+            <ConfigSection>
+              <SectionTitle style={{ fontSize: 'var(--font-size-lg)', marginBottom: 'var(--space-3)' }}>
+                <span>⚙️</span>
+                AI Configuration
+              </SectionTitle>
+              
+              <ConfigGrid>
+                <ConfigItem>
+                  <ConfigLabel>Number of Cards</ConfigLabel>
+                  <ConfigInput
+                    type="number"
+                    min="5"
+                    max="50"
+                    value={aiConfig.numCards}
+                    onChange={(e) => setAiConfig({...aiConfig, numCards: parseInt(e.target.value)})}
+                  />
+                </ConfigItem>
+
+                <ConfigItem>
+                  <ConfigLabel>Difficulty Level</ConfigLabel>
+                  <ConfigSelect
+                    value={aiConfig.difficulty}
+                    onChange={(e) => setAiConfig({...aiConfig, difficulty: e.target.value})}
+                  >
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                  </ConfigSelect>
+                </ConfigItem>
+
+                <ConfigItem>
+                  <ConfigLabel>Subject Area</ConfigLabel>
+                  <ConfigInput
+                    type="text"
+                    value={aiConfig.subject}
+                    onChange={(e) => setAiConfig({...aiConfig, subject: e.target.value})}
+                    placeholder="e.g., Biology, History, Programming"
+                  />
+                </ConfigItem>
+              </ConfigGrid>
+
+              <div style={{ marginTop: 'var(--space-4)', textAlign: 'center' }}>
+                <Button
+                  variant="primary"
+                  onClick={handleGenerateFromAI}
+                  disabled={isGenerating || (aiMode === 'document' && !aiDocument) || (aiMode === 'text' && !aiText.trim())}
+                >
+                  {isGenerating && <LoadingSpinner />}
+                  {isGenerating ? 'Generating Flashcards...' : '✨ Generate Flashcards with AI'}
+                </Button>
+              </div>
+
+              {aiError && <ErrorMessage>{aiError}</ErrorMessage>}
+              {aiSuccess && <SuccessMessage>{aiSuccess}</SuccessMessage>}
+            </ConfigSection>
+          </>
+        )}
+      </AISection>
+
       {previewCards.length > 0 && (
         <PreviewContainer>
           <PreviewTitle>Preview</PreviewTitle>
@@ -413,9 +891,12 @@ Term 3,Definition 3`}</ExampleText>
           size="lg"
           onClick={handleImport}
           loading={isImporting}
-          disabled={!textData.trim() && !fileData}
+          disabled={
+            isImporting || 
+            (useAI ? previewCards.length === 0 : (!textData.trim() && !fileData))
+          }
         >
-          Import Study Set
+          {useAI ? 'Import AI Generated Cards' : 'Import Study Set'}
         </Button>
       </Actions>
     </ImportPageContainer>

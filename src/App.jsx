@@ -8,6 +8,7 @@ import StudySetPage from './pages/StudySetPage';
 import ImportPage from './pages/ImportPage';
 import CreateSetPage from './pages/CreateSetPage';
 import TestModePage from './pages/TestModePage';
+import StudyGuidePage from './pages/StudyGuidePage';
 import SaveIndicator from './components/SaveIndicator';
 import styled from 'styled-components';
 
@@ -56,6 +57,7 @@ const AppContent = () => {
             <Route path="/import" element={<ImportPage />} />
             <Route path="/create" element={<CreateSetPage />} />
             <Route path="/test/:id" element={<TestModePage />} />
+            <Route path="/studyguide/:id" element={<StudyGuidePage />} />
           </Routes>
         </MainContent>
         <SaveIndicator 

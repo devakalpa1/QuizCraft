@@ -1,20 +1,29 @@
-# 🎯 QuizCraft - Smart Flashcard Learning Platform
+# 🎯 QuizCraft - AI-Powered Smart Flashcard Learning Platform
 
-A modern, feature-rich flashcard application built with React and Vite. Master any subject with smart study sessions, progress tracking, and persistent data storage.
+A cutting-edge flashcard application built with React and powered by Google's Gemini AI. Transform any document, PDF, or text into intelligent flashcards and get personalized study guidance.
 
-![QuizCraft Banner](https://via.placeholder.com/800x200/667eea/ffffff?text=QuizCraft+-+Smart+Learning)
+![QuizCraft Banner](https://via.placeholder.com/800x200/667eea/ffffff?text=QuizCraft+-+AI+Smart+Learning)
 
 ## ✨ Features
+
+### 🤖 AI-Powered Learning
+- **Document Intelligence** - Upload PDFs, Word docs, or text files and let AI extract key concepts
+- **Smart Flashcard Generation** - AI creates optimized flashcards from any content
+- **Adaptive Study Guides** - Comprehensive study guides tailored to your flashcard sets
+- **Personalized Recommendations** - AI analyzes your progress and suggests optimal study strategies
+- **Content Analysis** - Intelligent content parsing with context-aware flashcard creation
 
 ### 🎴 Smart Flashcards
 - **Interactive Cards** - Click to flip between terms and definitions
 - **Beautiful UI** - Modern glass morphism design with smooth animations
 - **Responsive Design** - Works perfectly on desktop, tablet, and mobile
+- **AI-Enhanced** - Cards generated with optimal difficulty and learning progression
 
 ### 📊 Progress Tracking
 - **Real-time Progress** - Track your learning progress as you study
 - **Smart Statistics** - View study time, streaks, and performance metrics
 - **Visual Feedback** - Color-coded progress bars and achievement indicators
+- **AI Analytics** - Get insights into your learning patterns and recommendations
 
 ### 💾 Data Persistence
 - **Auto-Save** - Your progress is automatically saved as you study
@@ -22,29 +31,33 @@ A modern, feature-rich flashcard application built with React and Vite. Master a
 - **Backup & Restore** - Export/import your data for safekeeping
 - **Cross-Session** - Pick up exactly where you left off
 
-### 🧠 Study Modes
+### 🧠 Advanced Study Modes
 - **Study Mode** - Review flashcards and mark your knowledge level
 - **Test Mode** - Take quizzes with multiple-choice questions
+- **AI Study Guide** - Comprehensive guides with key concepts, practice questions, and study tips
+- **Adaptive Testing** - AI-generated questions that adapt to your performance
 - **Progress Reset** - Start fresh anytime with individual set resets
 
-### 📂 Content Management
+### 📂 Intelligent Content Management
 - **Create Sets** - Build custom flashcard sets with ease
-- **Import Data** - Import from CSV files or paste directly
+- **AI Import** - Upload documents and let AI create flashcards automatically
+- **Traditional Import** - Import from CSV files or paste directly
 - **Export Data** - Download your study sets for backup
-- **Organize** - Manage multiple study sets efficiently
+- **Smart Organization** - AI-powered categorization and tagging
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - Node.js (v16 or higher)
 - npm or yarn
+- Google Gemini API key (for AI features)
 
 ### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/yourusername/quizcraft.git
-   cd quizcraft
+   git clone https://github.com/devakalpa1/QuizCraft.git
+   cd QuizCraft
    ```
 
 2. **Install dependencies**
@@ -52,12 +65,33 @@ A modern, feature-rich flashcard application built with React and Vite. Master a
    npm install
    ```
 
-3. **Start the development server**
+3. **Set up AI Configuration (Optional but Recommended)**
+   
+   To enable AI features, you'll need a Google Gemini API key:
+   
+   a. **Get your API key**:
+      - Visit [Google AI Studio](https://aistudio.google.com/app/apikey)
+      - Create a new API key or use an existing one
+   
+   b. **Configure environment variables**:
+      - Copy the `.env` file and update it with your API key:
+      ```bash
+      # .env file
+      VITE_GEMINI_API_KEY=your_actual_api_key_here
+      VITE_AI_MODEL=gemini-1.5-flash
+      VITE_AI_MAX_TOKENS=4096
+      ```
+   
+   c. **Verify AI setup**:
+      - The AI toggle will appear in the Import page when properly configured
+      - Without an API key, traditional CSV import will still work perfectly
+
+4. **Start the development server**
    ```bash
    npm run dev
    ```
 
-4. **Open your browser**
+5. **Open your browser**
    Navigate to `http://localhost:5173`
 
 ### Building for Production
@@ -74,9 +108,11 @@ The built files will be in the `dist` directory.
 - **Build Tool**: Vite 7.0.4
 - **Styling**: Styled Components 6.1.19
 - **Routing**: React Router DOM 7.7.0
+- **AI Integration**: Google Gemini API (@google/generative-ai)
 - **Animations**: CSS animations & React Spring
 - **Data Parsing**: PapaParse for CSV import
 - **Storage**: localStorage for persistence
+- **Document Processing**: Built-in Gemini document intelligence
 
 ## 📱 Usage
 

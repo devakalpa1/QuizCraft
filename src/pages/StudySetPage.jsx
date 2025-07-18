@@ -358,6 +358,20 @@ const StudySetPage = () => {
           Take Test
         </Button>
         <Button 
+          variant="success"
+          size="lg"
+          onClick={() => {
+            try {
+              navigate(`/studyguide/${id}`);
+            } catch (error) {
+              console.error('Navigate failed:', error);
+              window.location.href = `/studyguide/${id}`;
+            }
+          }}
+        >
+          📖 AI Study Guide
+        </Button>
+        <Button 
           variant="ghost"
           onClick={() => {
             try {

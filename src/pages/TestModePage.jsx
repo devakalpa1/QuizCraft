@@ -4,6 +4,8 @@ import styled, { keyframes } from 'styled-components';
 import { StudySetContext } from '../context/StudySetContext';
 import Button from '../components/Button';
 import ProgressBar from '../components/ProgressBar';
+import aiService from '../services/aiService';
+import aiService from '../services/aiService';
 
 const slideIn = keyframes`
   from {
@@ -252,7 +254,7 @@ const ScoreActions = styled.div`
 const TestModePage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { getStudySetById, recordStudySession } = useContext(StudySetContext);
+  const { getStudySetById, recordStudySession, getStudyProgress } = useContext(StudySetContext);
   const [activeSet, setActiveSet] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [score, setScore] = useState(0);
@@ -261,6 +263,9 @@ const TestModePage = () => {
   const [selectedAnswer, setSelectedAnswer] = useState(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [testStartTime] = useState(Date.now());
+  const [isGeneratingOptions, setIsGeneratingOptions] = useState(false);
+  const [isAiAvailable, setIsAiAvailable] = useState(false);
+  const [aiError, setAiError] = useState('');
 
   useEffect(() => {
     const set = getStudySetById(id);
@@ -269,6 +274,18 @@ const TestModePage = () => {
       return;
     }
     setActiveSet(set);
+    
+    // Check AI availability
+    const checkAI = async () => {
+      try {
+        await aiService.initialize();
+        setIsAiAvailable(aiService.isAvailable());
+      } catch (error) {
+        console.error('AI service initialization failed:', error);
+        setIsAiAvailable(false);
+      }
+    };
+    checkAI();
   }, [id, getStudySetById, navigate]);
 
   useEffect(() => {
@@ -277,25 +294,106 @@ const TestModePage = () => {
     }
   }, [activeSet, currentQuestionIndex]);
 
-  const generateOptions = () => {
-    const currentCard = activeSet.cards[currentQuestionIndex];
-    const wrongAnswers = activeSet.cards
-      .filter((_, index) => index !== currentQuestionIndex)
-      .map((card) => card.definition);
+  const generateIntelligentDistractors = async (currentCard, relatedCards) => {
+    if (!isAiAvailable) {
+      // Fallback to basic method if AI is not available
+      return relatedCards
+        .filter(card => card !== currentCard)
+        .map(card => card.definition)
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 3);
+    }
+
+    try {
+      const prompt = `
+        Generate 3 plausible but incorrect answers for this flashcard question. The distractors should be:
+        1. Related to the topic but clearly wrong
+        2. Challenging enough to test real understanding
+        3. Not obviously incorrect
+        4. Similar in length and style to the correct answer
+        
+        Question: ${currentCard.term}
+        Correct Answer: ${currentCard.definition}
+        
+        Related flashcards for context:
+        ${relatedCards.slice(0, 5).map(card => `- ${card.term}: ${card.definition}`).join('\n')}
+        
+        Return only a JSON array of 3 distractor strings:
+        ["distractor 1", "distractor 2", "distractor 3"]
+      `;
+
+      const result = await aiService.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      
+      try {
+        const distractors = JSON.parse(text);
+        if (Array.isArray(distractors) && distractors.length === 3) {
+          return distractors;
+        }
+      } catch (parseError) {
+        console.warn('Failed to parse AI response, using fallback');
+      }
+    } catch (error) {
+      console.warn('AI distractor generation failed, using fallback:', error);
+    }
+
+    // Fallback: use related flashcard definitions + some modifications
+    const relatedDefinitions = relatedCards
+      .filter(card => card !== currentCard)
+      .map(card => card.definition)
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 3);
+
+    return relatedDefinitions;
+  };
+
+  const generateOptions = async () => {
+    if (!activeSet || activeSet.cards.length === 0) return;
     
-    const shuffledWrongAnswers = wrongAnswers.sort(() => 0.5 - Math.random()).slice(0, 3);
-    const allOptions = [currentCard.definition, ...shuffledWrongAnswers].sort(() => 0.5 - Math.random());
-    setOptions(allOptions);
+    setIsGeneratingOptions(true);
+    setAiError('');
+    
+    try {
+      const currentCard = activeSet.cards[currentQuestionIndex];
+      
+      // Get related flashcards (prefer ones that might be conceptually similar)
+      const otherCards = activeSet.cards.filter((_, index) => index !== currentQuestionIndex);
+      
+      // Generate intelligent distractors
+      const distractors = await generateIntelligentDistractors(currentCard, otherCards);
+      
+      // Combine correct answer with distractors and shuffle
+      const allOptions = [currentCard.definition, ...distractors]
+        .sort(() => 0.5 - Math.random());
+      
+      setOptions(allOptions);
+    } catch (error) {
+      console.error('Error generating options:', error);
+      setAiError('Failed to generate test options. Using fallback method.');
+      
+      // Fallback to simple method
+      const currentCard = activeSet.cards[currentQuestionIndex];
+      const wrongAnswers = activeSet.cards
+        .filter((_, index) => index !== currentQuestionIndex)
+        .map((card) => card.definition);
+      
+      const shuffledWrongAnswers = wrongAnswers.sort(() => 0.5 - Math.random()).slice(0, 3);
+      const allOptions = [currentCard.definition, ...shuffledWrongAnswers].sort(() => 0.5 - Math.random());
+      setOptions(allOptions);
+    } finally {
+      setIsGeneratingOptions(false);
+    }
   };
 
   const handleAnswerOptionClick = (option) => {
-    if (!isSubmitted) {
+    if (!isSubmitted && !isGeneratingOptions) {
       setSelectedAnswer(option);
     }
   };
 
   const handleSubmit = () => {
-    if (selectedAnswer) {
+    if (selectedAnswer && !isGeneratingOptions) {
       setIsSubmitted(true);
       if (selectedAnswer === activeSet.cards[currentQuestionIndex].definition) {
         setScore(score + 1);
@@ -309,6 +407,7 @@ const TestModePage = () => {
       setCurrentQuestionIndex(nextQuestion);
       setSelectedAnswer(null);
       setIsSubmitted(false);
+      setAiError('');
     } else {
       setShowScore(true);
       
@@ -409,6 +508,32 @@ const TestModePage = () => {
               label="Test Progress"
               showStats={false}
             />
+            {!isAiAvailable && (
+              <div style={{ 
+                marginTop: 'var(--space-3)', 
+                padding: 'var(--space-2)', 
+                background: 'rgba(255, 193, 7, 0.1)', 
+                border: '1px solid #ffc107', 
+                borderRadius: 'var(--radius-md)', 
+                fontSize: 'var(--font-size-sm)',
+                textAlign: 'center'
+              }}>
+                ⚠️ AI features unavailable - using basic question generation
+              </div>
+            )}
+            {isAiAvailable && (
+              <div style={{ 
+                marginTop: 'var(--space-3)', 
+                padding: 'var(--space-2)', 
+                background: 'rgba(34, 197, 94, 0.1)', 
+                border: '1px solid var(--success-color)', 
+                borderRadius: 'var(--radius-md)', 
+                fontSize: 'var(--font-size-sm)',
+                textAlign: 'center'
+              }}>
+                ✨ AI-enhanced test with intelligent distractors
+              </div>
+            )}
           </TestHeader>
 
           <QuestionContainer>
@@ -416,7 +541,38 @@ const TestModePage = () => {
               Question {currentQuestionIndex + 1} of {activeSet.cards.length}
             </QuestionNumber>
             <QuestionText>{activeSet.cards[currentQuestionIndex].term}</QuestionText>
+            {isGeneratingOptions && (
+              <div style={{ textAlign: 'center', marginTop: 'var(--space-4)', color: 'var(--text-color-secondary)' }}>
+                <div style={{ 
+                  display: 'inline-block',
+                  width: '20px', 
+                  height: '20px', 
+                  border: '2px solid var(--border-color)', 
+                  borderTop: '2px solid var(--primary-color)', 
+                  borderRadius: '50%', 
+                  animation: 'spin 1s linear infinite',
+                  marginRight: 'var(--space-2)'
+                }}></div>
+                Generating intelligent answer options...
+              </div>
+            )}
           </QuestionContainer>
+
+          {aiError && (
+            <div style={{ 
+              margin: '0 auto var(--space-4)', 
+              maxWidth: '600px',
+              padding: 'var(--space-3)', 
+              background: 'rgba(239, 68, 68, 0.1)', 
+              border: '1px solid var(--error-color)', 
+              borderRadius: 'var(--radius-md)', 
+              color: 'var(--error-color)',
+              fontSize: 'var(--font-size-sm)',
+              textAlign: 'center'
+            }}>
+              {aiError}
+            </div>
+          )}
 
           <OptionsContainer>
             {options.map((option, index) => (
@@ -427,8 +583,9 @@ const TestModePage = () => {
                   ${selectedAnswer === option ? 'selected' : ''}
                   ${isSubmitted && option === activeSet.cards[currentQuestionIndex].definition ? 'correct' : ''}
                   ${isSubmitted && selectedAnswer === option && option !== activeSet.cards[currentQuestionIndex].definition ? 'incorrect' : ''}
-                  ${isSubmitted ? 'disabled' : ''}
+                  ${isSubmitted || isGeneratingOptions ? 'disabled' : ''}
                 `}
+                disabled={isGeneratingOptions}
               >
                 <span>{option}</span>
               </OptionButton>
@@ -441,6 +598,7 @@ const TestModePage = () => {
                 variant="primary" 
                 size="lg"
                 onClick={handleNextQuestion}
+                disabled={isGeneratingOptions}
               >
                 {currentQuestionIndex + 1 === activeSet.cards.length ? 'See Results' : 'Next Question →'}
               </Button>
@@ -449,7 +607,7 @@ const TestModePage = () => {
                 variant="primary" 
                 size="lg"
                 onClick={handleSubmit}
-                disabled={!selectedAnswer}
+                disabled={!selectedAnswer || isGeneratingOptions}
               >
                 Submit Answer
               </Button>
